@@ -35,6 +35,9 @@ def start_cap():
     start_btn['state'] = DISABLED
     pause_btn['state'] = NORMAL
     stop_btn['state'] = NORMAL
+    track_ip_port_btn['state'] = NORMAL
+    track_pid_btn['state'] = NORMAL
+    
     stop_flag = False
     if not pause_flag and not stop_flag:
         nif = select_nif.get()
@@ -50,18 +53,21 @@ def start_cap():
         t = threading.Thread(target=cap_packet, args=(nif,))
         t.setDaemon(True)
         t.start()
+        ##print('Thread')
     else:
         pause_flag = False
 
 
 def cap_packet(nif=None):
     filters = fitler_entry.get()
+    ##print(filters)
+
 
     stop_sending.clear()
     global packet_list
     # 清空列表
     packet_list.clear()
-
+    #print('cap_packet')
     try:
         sniff(iface=nif, prn=(lambda x: process_packet(x)), filter=filters)
     except scapy.error.Scapy_Exception:
@@ -69,16 +75,19 @@ def cap_packet(nif=None):
         start_btn['state'] = NORMAL
         pause_btn['state'] = DISABLED
         stop_btn['state'] = DISABLED
+        track_ip_port_btn['state'] = DISABLED
+        track_pid_btn['state'] = DISABLED
 
 
 def process_packet(packet):
     global pause_flag, stop_flag
     if pause_flag == False and stop_flag == False:
-        global packet_list, track_tcp_ip_port_flag, track_tcp_pid_flag
+        global packet_list
         sport = 'null'
         dport = 'null'
         pid = -1
 
+        # return
         if packet.haslayer(IP):
             pid = packet[IP].id
 
@@ -102,6 +111,9 @@ def process_packet(packet):
                 # sport = packet[IP].sport
                 # dport = packet[IP].dport
                 proto = packet[IP].proto
+                ##print(proto)
+                # if proto==2:
+                    # return
                 if proto in protos:
                     proto = protos[proto]
             # TCP
@@ -121,42 +133,59 @@ def process_packet(packet):
                     proto = 'DNS'
         else:
             return
+
+    
+
         length = len(packet)
         info = packet.summary()
         global packet_id,id_flag
+        #print(id_flag)
         if id_flag == True:
             return
-        id_flag = True
-        # print('process_packet id_flag = true')
+        # id_flag = False
+        # #print('process_packet id_flag = true')
 
+        # #print('process_packet')
+        global track_tcp_ip_port_flag, track_tcp_pid_flag
 
+        # return
         process_packet = [packet_id, packet_time, src_ip, dst_ip, proto, sport, dport, length, pid, info]
         if track_tcp_ip_port_flag:
-            global track_proto, track_src_ip, track_dst_ip, track_src_port, track_dst_port
-            if not check_is_save(process_packet, src_ip=track_src_ip,dst_ip=track_dst_ip,
-                                 src_port=track_src_port,dst_port=track_dst_port,
+            #print('track_tcp_ip_port_flag1')
+            global track_src_ip, track_dst_ip, track_src_port, track_dst_port
+            #print('track_tcp_ip_port_flag2')
+            # return 
+            if not check_is_save(process_packet, ip=[track_src_ip, track_dst_ip],
+                                 port=[track_src_port, track_dst_port],
                                  flag = 0,cap_packet = packet):
+                # id_flag = False
+                #print('track_tcp_ip_port_flag3')
                 return
+            # #print('track_tcp_ip_port_flag4')
         elif track_tcp_pid_flag:
             global track_pid
-            if not check_is_save(process_packet,proto='', pid=track_pid,
+            if not check_is_save(process_packet, pid=track_pid,
                                  flag = 0,cap_packet = packet):
+                # id_flag = False
                 return
-
+        # #print('process_packet')
+        id_flag = True
         packet_list.append({'packet': packet, 'process_packet': process_packet})
         # packet_id = packet_id + 1
         packet_tab_tree.insert("", 'end', packet_id, text=packet_id,
-                                values=(packet_id, packet_time, src_ip, dst_ip, proto, sport, dport, length, pid, info))
-        if stop_flag == True:
-            return
+                                values=(packet_id, packet_time, src_ip, 
+                                        dst_ip, proto, sport, dport, length, 
+                                        pid, info))
         # packet_id = packet_id + 1
         packet_tab_tree.update_idletasks()
         packet_tab_tree.yview_moveto(1)
         packet_id = packet_id + 1
 
 
-        # print('process_packet id_flag = false')
+        # #print('process_packet id_flag = false')
         id_flag = False
+    elif stop_flag == True:
+            return threading.Thread.exit()
 
 
 def show_detail_data(event):
@@ -166,17 +195,17 @@ def show_detail_data(event):
     packet_data_tree.delete(*packet_data_tree.get_children())
 
     packet_data_tree.column('detail_data')
-    # print(selected_item)
+    # #print(selected_item)
     if selected_item == ():
-        global packet_id,id_flag
+        global packet_id,id_flag,stop_flag
         while id_flag == True:
-            # print('~~~~~show_detail_data id_flag~~~')
+            # #print('~~~~~show_detail_data id_flag~~~')
             pass
         id_flag = True
-        # print('show_detail_data id_flag = True')
+        # #print('show_detail_data id_flag = True')
         packet_id = 1
         id_flag = False
-        # print('show_detail_data id_flag = False')
+        # #print('show_detail_data id_flag = False')
         # 等待packlist的数据
         while packet_list == [] and stop_flag == False:
             pass
@@ -185,9 +214,12 @@ def show_detail_data(event):
         packet = packet_list[packet_id-1]['packet']
     else:
         local_id = int(selected_item[0]) - 1
-        print(local_id,len(packet_list))
+        #print(local_id,len(packet_list))
+        global pause_flag,track_tcp_pid_flag,track_tcp_ip_port_flag
+        #print('stop_flag,pause_flag,track_tcp_pid_flag,track_tcp_ip_port_flag')
+        #print(stop_flag,pause_flag,track_tcp_pid_flag,track_tcp_ip_port_flag)
         packet = packet_list[local_id]['packet']
-    # # print(packet_list[packet_id])
+    # # #print(packet_list[packet_id])
 
     lines = (packet.show(dump=True)).split('\n')
     last_tree_entry = None
@@ -203,12 +235,15 @@ def show_detail_data(event):
     last_tree_entry = packet_data_tree.insert('', 'end', text='raw_data')
     for raw in raw_data0.split('\n'):
         packet_data_tree.insert(last_tree_entry, 'end', text=raw)
+    
 
 
 def pause_cap():
     start_btn['state'] = NORMAL
     pause_btn['state'] = DISABLED
-    stop_btn['state'] = DISABLED
+    stop_btn['state'] = NORMAL
+    track_ip_port_btn['state'] = NORMAL
+    track_pid_btn['state'] = NORMAL
     global pause_flag
     pause_flag = True
 
@@ -227,7 +262,7 @@ def stop_cap():
     stop_flag = True
     stop_sending.set()
     while not stop_sending.is_set():
-        # print('~~~~~~~~~~~stop_sending~~~~~~~~')
+        # #print('~~~~~~~~~~~stop_sending~~~~~~~~')
         pass
 
     id_flag = True
@@ -244,11 +279,13 @@ def stop_cap():
     start_btn['state'] = NORMAL
     pause_btn['state'] = DISABLED
     stop_btn['state'] = NORMAL
+    track_ip_port_btn['state'] = DISABLED
+    track_pid_btn['state'] = DISABLED
 
     packet_list.clear()
 
     items = packet_tab_tree.get_children()
-    # print(items)
+    # #print(items)
     for item in items:
         packet_tab_tree.delete(item)
     packet_tab_tree.clipboard_clear()
@@ -256,11 +293,12 @@ def stop_cap():
 
 def track_tcp_ip_port():
     global track_tcp_ip_port_flag
-    global track_proto, track_src_ip, track_dst_ip, track_src_port, track_dst_port
+
     track_tcp_ip_port_flag = True
 
+
     local_packet_id = int(selected_item[0]) - 1
-    packet = packet_list[local_packet_id]['packet']
+    selected_packet = packet_list[local_packet_id]['packet']
     processed_packet = packet_list[local_packet_id]['process_packet']
 
     # [packet_id, packet_time, src_ip, dst_ip, proto,
@@ -271,6 +309,7 @@ def track_tcp_ip_port():
     # start_button['state'] = DISABLED
     # pause_button['state'] = NORMAL
     # track_proto = 'TCP'
+    global track_src_ip,track_dst_ip,track_src_port,track_dst_port
     track_src_ip = processed_packet[2]
     track_dst_ip = processed_packet[3]
     track_src_port = processed_packet[5]
@@ -279,22 +318,29 @@ def track_tcp_ip_port():
     listOfEntriesInTreeView = packet_tab_tree.get_children()
     for each in listOfEntriesInTreeView:
         tmpEntriesInTreeView.append(packet_tab_tree.item(each))
-        # print(packet_list_tree.item(each)['values'])
+        # #print(packet_list_tree.item(each)['values'])
         if not check_is_save(packet_tab_tree.item(each)['values'],
-                             track_src_ip, track_dst_ip,
-                             track_src_port, track_dst_port,
-                             flag = 0,cap_packet = packet):
+                             ip = [track_src_ip, track_dst_ip],
+                             port= [track_src_port, track_dst_port],
+                             flag = 0,cap_packet = selected_packet):
             packet_tab_tree.delete(each)
+        else:
+            print('~~~~~~~~~~~~~true~~~~~~~~~~~~~~')
+            print(packet_tab_tree.item(each)['values'][2],packet_tab_tree.item(each)['values'][3])
+            print([track_src_ip, track_dst_ip])
+            print([track_src_port, track_dst_port])
+            print('~~~~~~~~~~~~~true~~~~~~~~~~~~~~')
+    
     packet_tab_tree.update_idletasks()
 
 
 def track_tcp_pid():
     global track_tcp_pid_flag, track_pid
     track_tcp_pid_flag = True
-    # # print(local_packet_id)
-    # print(selected_item[0])
+    # # #print(local_packet_id)
+    # #print(selected_item[0])
     local_packet_id = int(selected_item[0]) - 1
-    packet = packet_list[local_packet_id]['packet']
+    selected_packet = packet_list[local_packet_id]['packet']
     processed_packet = packet_list[local_packet_id]['process_packet']
 
     track_pid = processed_packet[8]
@@ -302,10 +348,10 @@ def track_tcp_pid():
     listOfEntriesInTreeView = packet_tab_tree.get_children()
     for each in listOfEntriesInTreeView:
         tmpEntriesInTreeView.append(packet_tab_tree.item(each))
-        # print(packet_list_tree.item(each)['values'])
+        # #print(packet_list_tree.item(each)['values'])
         if not check_is_save(packet_tab_tree.item(each)['values'],
                             pid=track_pid,
-                            flag = 0,cap_packet = packet):
+                            flag = 0,cap_packet = selected_packet):
             packet_tab_tree.delete(each)
 
     packet_tab_tree.update_idletasks()
@@ -316,25 +362,60 @@ def track_tcp_pid():
 def check_is_save(packet_info,
                   proto = '',src_ip='', dst_ip='',
                   src_port='', dst_port='',
-                  pid='',flag = -1,cap_packet = ''):
-    # print(packet_info[4])
+                  pid='',flag = -1,cap_packet = '',ip=['',''],port=['','']):
+    # #print(packet_info[4])
+    # [packet_id, packet_time, src_ip, dst_ip, proto,
+    #     0            1        2       3       4
+    # sport, dport, length, pid, info]
+    #   5      6      7      8     9
     if flag == 0:
         if TCP not in cap_packet:
+           #print('not tcp')
+           #print(cap_packet)
             return False
     if proto != '' and proto != packet_info[4]:
-        # print(proto)
-        # print(type(proto))
+       #print(proto)
+       #print(type(proto))
+        return False
+    if ip[0]!= '' and (packet_info[2] not in ip or packet_info[3] not in ip):
+       #print('ip,packet_info[2],packet_info[3]')
+       #print(ip,packet_info[2],packet_info[3])
+        return False
+    if ip[0]!= '' and packet_info[2] in ip and packet_info[3] in ip:
+       print('~~~~~true_check_is_save~~~~~~~')
+       print('true,ip,packet_info[2],packet_info[3]')
+       print('packet_info[2] in ip',packet_info[2] in ip)
+       print('packet_info[3] in ip',packet_info[3] in ip)
+       print(ip,packet_info[2],packet_info[3])
+       print('~~~~~~~~~~~~~~~')
+        # return False
+    if port[0]!='' and packet_info[5] not in port and packet_info[6] not in port:
+       #print('port,packet_info[5],packet_info[6]')
+       #print(port,packet_info[5],packet_info[6])
         return False
     if src_ip != '' and src_ip != packet_info[2]:
+       #print('src_ip,packet_info[2]')
+       #print(src_ip,packet_info[2])
         return False
     if dst_ip != '' and dst_ip != packet_info[3]:
+       #print('dst_ip,packet_info[3]')
+       #print(dst_ip,packet_info[3])
         return False
     if src_port != '' and src_port != packet_info[5]:
+       #print('src_port,packet_info[5]')
+       #print(src_port,packet_info[5])
         return False
     if dst_port != '' and dst_port != packet_info[6]:
+       #print('dst_port,packet_info[6]')
+       #print(dst_port,packet_info[6])
+
         return False
     if pid != '' and pid != packet_info[8]:
+       #print('pid,packet_info[8]')
+       #print(pid,packet_info[8])
         return False
+    
+
     return True
 
 
@@ -354,9 +435,13 @@ stop_btn = Button(top_button_frame, width=8, text="停止", command=stop_cap)
 track_ip_port_btn = Button(top_button_frame, width=8, text="追踪ip+port", command=track_tcp_ip_port)
 track_pid_btn = Button(top_button_frame, width=8, text="追踪pid", command=track_tcp_pid)
 
-start_btn['state'] = 'normal'
-pause_btn['state'] = 'disabled'
-stop_btn['state'] = 'disabled'
+start_btn['state'] = NORMAL
+pause_btn['state'] = DISABLED
+stop_btn['state'] = DISABLED
+# track_ip_port_btn['state'] = DISABLED
+# track_pid_btn['state'] = DISABLED
+
+
 
 filter_label = Label(top_button_frame, width=10, text="BPF Filters :")
 fitler_entry = Entry(top_button_frame)
